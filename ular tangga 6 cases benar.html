@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Permainan Ular Tangga Interaktif</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      margin: 0;
+      padding: 20px;
+      background-color: #f2f2f2;
+    }
+    #gameContainer {
+      display: flex;
+      flex-direction: row;
+    }
+    /* Papan dengan CSS Grid */
+    #board {
+      display: grid;
+      grid-template-columns: repeat(10, 60px);
+      grid-template-rows: repeat(10, 60px);
+      gap: 2px;
+      background-color: #333;
+      padding: 2px;
+    }
+    .square {
+      background-color: #fff;
+      border: 1px solid #999;
+      position: relative;
+      text-align: center;
+      font-size: 12px;
+    }
+    .square .number {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      font-weight: bold;
+    }
+    /* Tampilan token pemain */
+    .token {
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      display: inline-block;
+      margin: 1px;
+    }
+    #controlPanel {
+      margin-left: 20px;
+    }
+    #rollButton {
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+    #status {
+      margin-bottom: 10px;
+    }
+    #diceResult {
+      margin: 10px 0;
+      font-size: 18px;
+    }
+    #scores {
+      margin-top: 10px;
+    }
+    #message {
+      margin-top: 10px;
+      color: #007700;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <div id="board"></div>
+    <div id="controlPanel">
+      <div id="status">Giliran: Pemain 1</div>
+      <button id="rollButton">Gulir Dadu</button>
+      <div id="diceResult"></div>
+      <div id="message"></div>
+      <div id="scores"></div>
+    </div>
+  </div>
+  <script>
+    // Konfigurasi permainan
+    const boardSize = 10; // papan 10x10
+    const totalSquares = boardSize * boardSize; // 100 kotak
+
+    // Definisi posisi ular dan tangga
+    const snakes = {
+      17: 7,
+      54: 34,
+      62: 19,
+      64: 60,
+      87: 24,
+      93: 73,
+      95: 75,
+      99: 78
+    };
+    const ladders = {
+      4: 14,
+      9: 31,
+      21: 42,
+      28: 84,
+      36: 44,
+      51: 67,
+      71: 91,
+      80: 100
+    };
+
+    // Kotak tertentu untuk memicu pertanyaan matematika
+    const mathTriggerSquares = [5, 14, 23, 32, 41, 50, 59, 68, 77, 86, 95];
+
+    // Data pemain (3 pemain)
+    const players = [
+      { id: 1, name: "Pemain merah", position: 0, score: 0, color: "red", finished: false },
+      { id: 2, name: "Pemain biru", position: 0, score: 0, color: "blue", finished: false },
+      { id: 3, name: "Pemain hijau", position: 0, score: 0, color: "green", finished: false }
+    ];
+    let currentPlayerIndex = 0;
+    let gameOver = false;
+
+    // Buat papan permainan
+    const boardElement = document.getElementById("board");
+    const squareElements = {};
+
+    // Membuat 100 kotak dengan posisi sesuai pola zigzag
+    for (let n = 1; n <= totalSquares; n++) {
+      const squareDiv = document.createElement("div");
+      squareDiv.classList.add("square");
+      squareDiv.id = "square-" + n;
+
+      // Hitung baris dan kolom untuk pola zigzag
+      let row = Math.floor((n - 1) / boardSize);
+      let col;
+      // Baris dari bawah (baris 0 adalah baris terbawah)
+      let rowFromBottom = row;
+      if (rowFromBottom % 2 === 0) {
+        col = (n - 1) % boardSize;
+      } else {
+        col = boardSize - 1 - ((n - 1) % boardSize);
+      }
+      // CSS Grid: baris dihitung dari atas (mulai 1)
+      let gridRow = boardSize - rowFromBottom;
+      let gridCol = col + 1;
+      squareDiv.style.gridRowStart = gridRow;
+      squareDiv.style.gridColumnStart = gridCol;
+
+      // Tampilkan nomor kotak
+      const numberDiv = document.createElement("div");
+      numberDiv.classList.add("number");
+      numberDiv.textContent = n;
+      squareDiv.appendChild(numberDiv);
+
+      boardElement.appendChild(squareDiv);
+      squareElements[n] = squareDiv;
+    }
+
+    // Perbarui tampilan token pemain pada papan
+    function updateBoard() {
+      // Bersihkan token di tiap kotak (kecuali nomor)
+      for (let i = 1; i <= totalSquares; i++) {
+        let square = squareElements[i];
+        while (square.childNodes.length > 1) {
+          square.removeChild(square.lastChild);
+        }
+      }
+      // Tempatkan token pemain sesuai posisi
+      players.forEach(player => {
+        if(player.position > 0) {
+          let pos = player.position;
+          let tokenDiv = document.createElement("div");
+          tokenDiv.classList.add("token");
+          tokenDiv.style.backgroundColor = player.color;
+          tokenDiv.title = player.name;
+          squareElements[pos].appendChild(tokenDiv);
+        }
+      });
+    }
+
+    // Perbarui tampilan skor
+    function updateScores() {
+      let scoresDiv = document.getElementById("scores");
+      scoresDiv.innerHTML = "<h3>Skor:</h3>";
+      players.forEach(player => {
+        scoresDiv.innerHTML += `<p>${player.name}: ${player.score}</p>`;
+      });
+    }
+
+    // Perbarui status giliran
+    function updateStatus(message) {
+      let statusDiv = document.getElementById("status");
+      statusDiv.textContent = message;
+    }
+
+    // Fungsi gulir dadu
+    function rollDice() {
+      if(gameOver) return;
+      let dice = Math.floor(Math.random() * 6) + 1;
+      document.getElementById("diceResult").textContent = "Hasil dadu: " + dice;
+      let currentPlayer = players[currentPlayerIndex];
+
+      if(currentPlayer.finished) {
+        nextTurn();
+        return;
+      }
+
+      let newPos = currentPlayer.position + dice;
+      if(newPos > totalSquares) {
+        // Jika hasil dadu melebihi kotak 100, pemain tidak bergerak
+        document.getElementById("message").textContent = currentPlayer.name + " tidak bisa bergerak karena melebihi kotak 100.";
+        nextTurn();
+        return;
+      }
+      currentPlayer.position = newPos;
+      document.getElementById("message").textContent = currentPlayer.name + " bergerak ke kotak " + newPos;
+      updateBoard();
+
+      // Cek ular atau tangga setelah bergerak
+      setTimeout(() => {
+        if(snakes[currentPlayer.position]) {
+          let oldPos = currentPlayer.position;
+          currentPlayer.position = snakes[currentPlayer.position];
+          document.getElementById("message").textContent = currentPlayer.name + " kena ular! Turun dari " + oldPos + " ke " + currentPlayer.position;
+          updateBoard();
+        } else if(ladders[currentPlayer.position]) {
+          let oldPos = currentPlayer.position;
+          currentPlayer.position = ladders[currentPlayer.position];
+          document.getElementById("message").textContent = currentPlayer.name + " menemukan tangga! Naik dari " + oldPos + " ke " + currentPlayer.position;
+          updateBoard();
+        }
+
+        // Jika berada di kotak yang memicu pertanyaan matematika
+        if(mathTriggerSquares.includes(currentPlayer.position)) {
+          askMathQuestion(currentPlayer);
+        } else {
+          if(currentPlayer.position === totalSquares) {
+            currentPlayer.finished = true;
+            document.getElementById("message").textContent += " dan mencapai kotak 100!";
+          }
+          updateScores();
+          nextTurn();
+        }
+      }, 500);
+    }
+
+    // Fungsi untuk menampilkan pertanyaan matematika secara acak
+    function askMathQuestion(player) {
+      let qa = generateMathQuestion();
+      let userAnswer = prompt(player.name + ", Jawab pertanyaan berikut:\n" + qa.question);
+      if(userAnswer !== null && parseInt(userAnswer) === qa.answer) {
+        player.score += 100;
+        alert("Jawaban benar! " + player.name + " mendapatkan 100 poin.");
+      } else {
+        alert("Jawaban salah. Jawaban yang benar adalah " + qa.answer + ".");
+      }
+      if(player.position === totalSquares) {
+        player.finished = true;
+        document.getElementById("message").textContent += " dan mencapai kotak 100!";
+      }
+      updateScores();
+      nextTurn();
+    }
+
+    // Fungsi untuk menghasilkan pertanyaan matematika acak (operasi penjumlahan, pengurangan, perkalian)
+    function generateMathQuestion() {
+      let opIndex = Math.floor(Math.random() * 6);
+      let a = Math.floor(Math.random() * 20) + 1;
+      let b = Math.floor(Math.random() * 20) + 1;
+      let c = Math.floor(Math.random() * 20) + 1;
+      let question = "";
+      let answer = 0;
+      switch(opIndex) {
+        case 0:
+            question = `${a} + ${b} = ?`;
+            answer = a + b;
+            break;
+        case 1:
+            question = `${a} - ${b} = ?`;
+            answer = a - b;
+            break;
+        case 2:
+            question = `${a} x ${b} = ?`;
+            answer = a * b;
+            break;
+        case 3:
+            question = `${a} x ${b} + ${c} = ?`;
+            answer = (a * b) + c;
+            break;
+        case 4:
+            question = `${a} + ${b} - ${c} = ?`;
+            answer = (a + b) - c;
+            break;
+        case 5:
+            question = `${a} x (${b} + ${c}) = ?`;
+            answer = a * (b + c);
+            break;
+        case 6:
+            question = `(${a} + ${b}) x ${c} = ?`;
+            answer = (a + b) * c;
+            break;
+
+
+      }
+      return {question: question, answer: answer};
+    }
+
+    // Pindah giliran ke pemain berikutnya
+    function nextTurn() {
+      // Jika semua pemain sudah mencapai kotak 100, permainan selesai
+      if(players.every(p => p.finished)) {
+        gameOver = true;
+        declareWinner();
+        return;
+      }
+      // Lanjut ke pemain berikutnya yang belum selesai
+      do {
+        currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+      } while (players[currentPlayerIndex].finished);
+      updateStatus("Giliran: " + players[currentPlayerIndex].name);
+    }
+
+    // Menentukan pemenang berdasarkan skor (poin jawaban benar)
+    function declareWinner() {
+      let winner = players.reduce((prev, curr) => prev.score > curr.score ? prev : curr);
+      updateStatus("Permainan selesai! Pemenang: " + winner.name + " dengan skor " + winner.score);
+      document.getElementById("rollButton").disabled = true;
+    }
+
+    // Event listener untuk tombol gulir dadu
+    document.getElementById("rollButton").addEventListener("click", rollDice);
+
+    // Inisialisasi tampilan awal
+    updateBoard();
+    updateScores();
+  </script>
+</body>
+</html>
